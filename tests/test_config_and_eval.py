@@ -143,6 +143,61 @@ class TestEvaluateAllSamplesFail:
         assert not (tmp_path / "report.json").exists()
 
 
+class TestEvaluateJudgeFailureIsolation:
+    def _write_dataset(self, tmp_path, n=3):
+        dataset_path = tmp_path / "val.jsonl"
+        with open(dataset_path, "w", encoding="utf-8") as f:
+            for i in range(n):
+                f.write(
+                    json.dumps({"instruction": f"指示{i}", "input": "", "output": f"解答{i}"})
+                    + "\n"
+                )
+        return dataset_path
+
+    def test_judge_failure_on_one_sample_is_skipped(self, tmp_path, monkeypatch):
+        """A judge (teacher.complete) exception on a single sample must not
+        abort the whole evaluation; the other samples should still be
+        scored and included in the report."""
+        dataset_path = self._write_dataset(tmp_path, n=3)
+        monkeypatch.setattr(evaluate_module, "ask_student", lambda student, prompt, timeout=300.0: "回答")
+
+        class PartiallyFailingTeacher(TeacherClient):
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, messages, temperature=None, max_tokens=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("throttled")
+                return '{"score": 8, "reason": "ok"}'
+
+        config = EvaluationConfig(
+            dataset_path=str(dataset_path),
+            num_samples=3,
+            report_path=str(tmp_path / "report.json"),
+        )
+        report = evaluate(teacher=PartiallyFailingTeacher(), student=StudentConfig(), config=config)
+        assert report["num_evaluated"] == 2
+        assert (tmp_path / "report.json").exists()
+
+    def test_judge_failure_on_all_samples_raises_runtime_error(self, tmp_path, monkeypatch):
+        dataset_path = self._write_dataset(tmp_path, n=3)
+        monkeypatch.setattr(evaluate_module, "ask_student", lambda student, prompt, timeout=300.0: "回答")
+
+        class AlwaysFailingTeacher(TeacherClient):
+            def chat(self, messages, temperature=None, max_tokens=None):
+                raise RuntimeError("throttled")
+
+        config = EvaluationConfig(
+            dataset_path=str(dataset_path),
+            num_samples=3,
+            report_path=str(tmp_path / "report.json"),
+        )
+        with pytest.raises(RuntimeError, match="全 3 サンプルの評価に失敗した"):
+            evaluate(teacher=AlwaysFailingTeacher(), student=StudentConfig(), config=config)
+        assert not (tmp_path / "report.json").exists()
+
+
 def test_build_chat_records_merges_input():
     records = [
         {"instruction": "翻訳して", "input": "hello", "output": "こんにちは"},

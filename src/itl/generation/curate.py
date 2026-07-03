@@ -79,6 +79,8 @@ def deduplicate(records: list[dict], threshold: float) -> list[dict]:
 def curate(config: CurationConfig, seed: int = 42) -> dict[str, int]:
     """Filter, dedupe and split the generated data. Returns record counts."""
     records = load_jsonl(config.input_path)
+    if not records:
+        raise FileNotFoundError(f"No generated data at {config.input_path} — run 'itl generate' first")
     total = len(records)
     records = [r for r in records if passes_quality_filter(r, config)]
     filtered = len(records)

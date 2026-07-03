@@ -102,16 +102,20 @@ def evaluate(
         except Exception:
             logger.exception("Student inference failed on sample %d", i)
             continue
-        judge_reply = teacher.complete(
-            JUDGE_PROMPT.format(
-                instruction=record["instruction"],
-                input=record.get("input", "") or "(なし)",
-                reference=record["output"],
-                answer=answer,
-            ),
-            system=JUDGE_SYSTEM,
-            temperature=0.0,
-        )
+        try:
+            judge_reply = teacher.complete(
+                JUDGE_PROMPT.format(
+                    instruction=record["instruction"],
+                    input=record.get("input", "") or "(なし)",
+                    reference=record["output"],
+                    answer=answer,
+                ),
+                system=JUDGE_SYSTEM,
+                temperature=0.0,
+            )
+        except Exception:
+            logger.exception("Judge call failed on sample %d", i)
+            continue
         judgement = parse_judgement(judge_reply)
         if judgement is None:
             logger.warning("Could not parse judgement for sample %d", i)

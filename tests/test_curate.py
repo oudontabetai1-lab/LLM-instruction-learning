@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from itl.config import CurationConfig
 from itl.generation.curate import (
     curate,
@@ -131,3 +133,26 @@ def test_curate_tiny_dataset_keeps_at_least_one_train_record(tmp_path):
     assert stats["after_dedup"] == 2
     assert stats["train"] >= 1
     assert stats["train"] + stats["val"] == stats["after_dedup"]
+
+
+class TestCurateEmptyInputFails:
+    def test_missing_input_file_raises_file_not_found(self, tmp_path):
+        config = CurationConfig(
+            input_path=str(tmp_path / "does_not_exist.jsonl"),
+            output_dir=str(tmp_path / "curated"),
+        )
+        with pytest.raises(FileNotFoundError):
+            curate(config)
+        assert not (tmp_path / "curated" / "train.jsonl").exists()
+
+    def test_empty_input_file_raises_file_not_found(self, tmp_path):
+        input_path = tmp_path / "generated.jsonl"
+        input_path.write_text("", encoding="utf-8")
+
+        config = CurationConfig(
+            input_path=str(input_path),
+            output_dir=str(tmp_path / "curated"),
+        )
+        with pytest.raises(FileNotFoundError):
+            curate(config)
+        assert not (tmp_path / "curated" / "train.jsonl").exists()
