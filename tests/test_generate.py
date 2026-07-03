@@ -69,6 +69,20 @@ class TestParseGeneratedTasks:
         assert len(tasks) == 1
         assert tasks[0]["instruction"] == "要約して"
 
+    def test_metadata_array_followed_by_real_task_array(self):
+        # A leading metadata array (e.g. a "fields" list of strings) must be
+        # skipped in favor of the real task array that follows, since it has
+        # no valid task records of its own.
+        metadata = json.dumps(["instruction", "input", "output"], ensure_ascii=False)
+        real = json.dumps(
+            [{"instruction": "翻訳して", "input": "hello", "output": "こんにちは"}],
+            ensure_ascii=False,
+        )
+        text = f'fields: {metadata}\n{real}'
+        tasks = parse_generated_tasks(text)
+        assert len(tasks) == 1
+        assert tasks[0]["output"] == "こんにちは"
+
     def test_json_array_preceded_by_prose_with_brackets(self):
         # The leading "[TODO]" is not valid JSON on its own (bareword), so it
         # must be skipped in favor of the real array that follows.

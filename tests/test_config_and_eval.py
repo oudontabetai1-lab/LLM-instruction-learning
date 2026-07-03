@@ -59,6 +59,18 @@ class TestParseJudgement:
     def test_garbage_rejected(self):
         assert parse_judgement("採点できません") is None
 
+    def test_leading_object_without_score_is_skipped(self):
+        # A preceding "{...}" object that isn't the judgement (no valid
+        # score) must be skipped in favor of the real judgement that follows.
+        text = '{"note": "採点前のメモ"}\n{"score": 7, "reason": "妥当"}'
+        result = parse_judgement(text)
+        assert result == {"score": 7.0, "reason": "妥当"}
+
+    def test_trailing_bracketed_prose_is_ignored(self):
+        text = '{"score": 6, "reason": "まずまず"}\n{note}'
+        result = parse_judgement(text)
+        assert result == {"score": 6.0, "reason": "まずまず"}
+
 
 class TestEvaluateNumSamplesValidation:
     def test_non_positive_num_samples_raises_value_error(self, tmp_path):

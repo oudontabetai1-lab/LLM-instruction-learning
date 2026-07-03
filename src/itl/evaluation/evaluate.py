@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import statistics
 from pathlib import Path
 
@@ -56,17 +55,29 @@ def ask_student(student: StudentConfig, prompt: str, timeout: float = 300.0) -> 
 
 
 def parse_judgement(text: str) -> dict | None:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-    score = data.get("score")
-    if not isinstance(score, (int, float)) or not 1 <= score <= 10:
-        return None
-    return {"score": float(score), "reason": str(data.get("reason", ""))}
+    """Extract a validated ``{"score": ..., "reason": ...}`` judgement from ``text``.
+
+    The judge's reply may contain multiple ``{...}`` objects or bracketed
+    prose (e.g. a leading remark object before the real judgement, or a
+    trailing parenthetical), so a greedy regex from the first ``{`` to the
+    last ``}`` is unreliable. Instead, try decoding from each ``{`` in turn
+    and take the first parsed dict whose score passes validation.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            data, _ = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        score = data.get("score")
+        if not isinstance(score, (int, float)) or not 1 <= score <= 10:
+            continue
+        return {"score": float(score), "reason": str(data.get("reason", ""))}
+    return None
 
 
 def evaluate(

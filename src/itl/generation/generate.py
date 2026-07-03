@@ -79,14 +79,18 @@ def format_examples(tasks: list[dict]) -> str:
     return "\n".join(blocks)
 
 
-def _extract_json_array(text: str) -> list | None:
-    """Find the first valid JSON array in ``text``.
+def _iter_json_arrays(text: str):
+    """Yield every JSON array found in ``text``, in order of appearance.
 
     The model may wrap the JSON array in prose or a code fence, and any
-    trailing prose may itself contain brackets (e.g. "Note: [draft]"), so a
-    greedy regex from the first ``[`` to the last ``]`` is unreliable. Instead,
-    try decoding from each ``[`` in turn and take the first successful parse
-    that yields a list.
+    surrounding prose may itself contain brackets (e.g. "Note: [draft]"), so
+    a greedy regex from the first ``[`` to the last ``]`` is unreliable.
+    Similarly, the reply may lead with an unrelated metadata array (e.g.
+    ``["instruction", "input", "output"]``) before the real task array, so
+    stopping at the first parseable array is also unreliable. Instead, try
+    decoding from each ``[`` in turn and yield every successful parse that
+    yields a list, letting the caller pick the one that actually contains
+    valid task records.
     """
     decoder = json.JSONDecoder()
     for i, ch in enumerate(text):
@@ -97,19 +101,11 @@ def _extract_json_array(text: str) -> list | None:
         except json.JSONDecodeError:
             continue
         if isinstance(data, list):
-            return data
-    return None
+            yield data
 
 
-def parse_generated_tasks(text: str) -> list[dict]:
-    """Extract instruction/input/output records from the teacher's reply.
-
-    The model may wrap the JSON array in prose or a code fence, so find the
-    outermost array and validate each element.
-    """
-    data = _extract_json_array(text)
-    if data is None:
-        return []
+def _validate_task_records(data: list) -> list[dict]:
+    """Validate and normalize candidate task records from a parsed array."""
     tasks = []
     for item in data:
         if not isinstance(item, dict):
@@ -126,6 +122,21 @@ def parse_generated_tasks(text: str) -> list[dict]:
             }
         )
     return tasks
+
+
+def parse_generated_tasks(text: str) -> list[dict]:
+    """Extract instruction/input/output records from the teacher's reply.
+
+    The reply may contain multiple JSON arrays (e.g. a leading metadata
+    array followed by the real task array), so scan every candidate array
+    and return the records from the first one that yields at least one
+    valid task.
+    """
+    for data in _iter_json_arrays(text):
+        tasks = _validate_task_records(data)
+        if tasks:
+            return tasks
+    return []
 
 
 def validate_seeds(seeds: list[dict]) -> list[dict]:
