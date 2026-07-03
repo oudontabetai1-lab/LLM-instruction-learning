@@ -45,3 +45,15 @@ variable "enable_bedrock_teacher" {
   type        = bool
   default     = false
 }
+
+variable "vpc_id" {
+  description = "GPU セキュリティグループを作成する VPC ID(空ならデフォルト VPC を使用)"
+  type        = string
+  default     = ""
+}
+
+variable "subnet_id" {
+  description = "GPU インスタンスを配置するサブネット ID(空ならデフォルト VPC のデフォルトサブネットを使用)"
+  type        = string
+  default     = ""
+}

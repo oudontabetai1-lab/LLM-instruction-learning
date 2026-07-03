@@ -34,7 +34,7 @@ def train(student: StudentConfig, config: TrainingConfig) -> str:
     try:
         import torch
         from datasets import Dataset
-        from peft import LoraConfig
+        from peft import LoraConfig, PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         from trl import SFTConfig, SFTTrainer
     except ImportError as exc:  # pragma: no cover
@@ -91,9 +91,26 @@ def train(student: StudentConfig, config: TrainingConfig) -> str:
     )
     trainer.train()
 
-    # Merge the LoRA adapter into the base weights for GGUF export.
+    # Save the trained LoRA adapter, then free the quantized training model before
+    # reloading the base model at full precision for merging (saves GPU memory).
+    adapter_dir = str(Path(config.output_dir) / "adapter")
+    trainer.save_model(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
+
+    del trainer
+    del model
+    torch.cuda.empty_cache()
+
+    # Merging a LoRA adapter into a 4-bit quantized base produces degraded weights,
+    # so reload the base model unquantized and merge against that instead.
+    base_model = AutoModelForCausalLM.from_pretrained(
+        student.base_model,
+        torch_dtype=torch.bfloat16,
+    )
+    merged_model = PeftModel.from_pretrained(base_model, adapter_dir)
+    merged_model = merged_model.merge_and_unload()
+
     merged_dir = str(Path(config.output_dir) / "merged")
-    merged = trainer.model.merge_and_unload()
-    merged.save_pretrained(merged_dir)
+    merged_model.save_pretrained(merged_dir)
     tokenizer.save_pretrained(merged_dir)
     return merged_dir

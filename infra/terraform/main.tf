@@ -52,13 +52,18 @@ data "aws_ami" "dlami" {
 resource "aws_security_group" "gpu" {
   name_prefix = "${var.project_name}-gpu-"
   description = "GPU instance for Ollama and training"
+  vpc_id      = var.vpc_id != "" ? var.vpc_id : null
 
-  # SSH は許可された CIDR のみ。Ollama ポートは外部公開しない(SSM/トンネル経由)
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = var.ssh_allowed_cidrs
+  # SSH は許可された CIDR のみ。空リストなら ingress ルール自体を作らない(空 cidr_blocks での apply 失敗を防止)。
+  # Ollama ポートは外部公開しない(SSM/トンネル経由)
+  dynamic "ingress" {
+    for_each = length(var.ssh_allowed_cidrs) > 0 ? [var.ssh_allowed_cidrs] : []
+    content {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = ingress.value
+    }
   }
 
   egress {
@@ -127,6 +132,7 @@ resource "aws_instance" "gpu" {
   instance_type          = var.gpu_instance_type
   iam_instance_profile   = aws_iam_instance_profile.gpu.name
   vpc_security_group_ids = [aws_security_group.gpu.id]
+  subnet_id              = var.subnet_id != "" ? var.subnet_id : null
   key_name               = var.key_name != "" ? var.key_name : null
 
   root_block_device {

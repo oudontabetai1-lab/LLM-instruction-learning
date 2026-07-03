@@ -86,3 +86,29 @@ def test_curate_end_to_end(tmp_path):
     assert stats["val"] >= 1
     assert (tmp_path / "curated" / "train.jsonl").exists()
     assert (tmp_path / "curated" / "val.jsonl").exists()
+
+
+def test_curate_tiny_dataset_keeps_at_least_one_train_record(tmp_path):
+    """With only 2 records and a val_ratio that would consume both, at least
+    one record must remain in train (regression test for the empty-train bug).
+    """
+    input_path = tmp_path / "generated.jsonl"
+    records = [
+        make_record(instruction="次の英文を日本語に翻訳してください、お願いします"),
+        make_record(instruction="フィボナッチ数列を計算するコードを書いてください"),
+    ]
+    with open(input_path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    config = CurationConfig(
+        input_path=str(input_path),
+        output_dir=str(tmp_path / "curated"),
+        similarity_threshold=0.95,
+        val_ratio=1.0,
+    )
+    stats = curate(config)
+
+    assert stats["after_dedup"] == 2
+    assert stats["train"] >= 1
+    assert stats["train"] + stats["val"] == stats["after_dedup"]

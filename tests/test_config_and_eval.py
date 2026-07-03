@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
-from itl.config import PipelineConfig, load_config
-from itl.evaluation.evaluate import parse_judgement
+from itl.config import EvaluationConfig, PipelineConfig, StudentConfig, load_config
+from itl.evaluation.evaluate import evaluate, parse_judgement
 from itl.teachers import create_teacher
 from itl.training.train_qlora import build_chat_records
 
@@ -44,6 +46,30 @@ class TestParseJudgement:
 
     def test_garbage_rejected(self):
         assert parse_judgement("採点できません") is None
+
+
+class TestEvaluateNumSamplesValidation:
+    def test_non_positive_num_samples_raises_value_error(self, tmp_path):
+        dataset_path = tmp_path / "val.jsonl"
+        with open(dataset_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"instruction": "指示", "input": "", "output": "解答"}) + "\n")
+
+        config = EvaluationConfig(
+            dataset_path=str(dataset_path),
+            num_samples=0,
+            report_path=str(tmp_path / "report.json"),
+        )
+        with pytest.raises(ValueError, match="num_samples must be positive"):
+            evaluate(teacher=None, student=StudentConfig(), config=config)
+
+    def test_missing_dataset_still_raises_file_not_found(self, tmp_path):
+        config = EvaluationConfig(
+            dataset_path=str(tmp_path / "does_not_exist.jsonl"),
+            num_samples=5,
+            report_path=str(tmp_path / "report.json"),
+        )
+        with pytest.raises(FileNotFoundError):
+            evaluate(teacher=None, student=StudentConfig(), config=config)
 
 
 def test_build_chat_records_merges_input():

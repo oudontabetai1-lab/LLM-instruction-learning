@@ -78,6 +78,8 @@ def curate(config: CurationConfig, seed: int = 42) -> dict[str, int]:
     rng = random.Random(seed)
     rng.shuffle(records)
     val_size = max(1, int(len(records) * config.val_ratio)) if records else 0
+    # Never let the val split consume every record — keep at least one for train.
+    val_size = min(val_size, max(0, len(records) - 1))
     val, train = records[:val_size], records[val_size:]
 
     out_dir = Path(config.output_dir)

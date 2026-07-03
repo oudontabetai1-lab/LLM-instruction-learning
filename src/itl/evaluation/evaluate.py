@@ -75,6 +75,8 @@ def evaluate(
     config: EvaluationConfig,
 ) -> dict:
     """Score the student on the validation set and write a JSON report."""
+    if config.num_samples <= 0:
+        raise ValueError("evaluation.num_samples must be positive")
     records = load_jsonl(config.dataset_path)[: config.num_samples]
     if not records:
         raise FileNotFoundError(f"No evaluation data at {config.dataset_path} — run 'itl curate' first")

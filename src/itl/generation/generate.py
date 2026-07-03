@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import re
+import time
 from pathlib import Path
 
 from itl.config import GenerationConfig
@@ -112,23 +113,54 @@ def parse_generated_tasks(text: str) -> list[dict]:
     return tasks
 
 
+def validate_seeds(seeds: list[dict]) -> list[dict]:
+    """Drop seed records with missing or empty instruction/output fields."""
+    valid = []
+    for i, seed in enumerate(seeds):
+        instruction = str(seed.get("instruction", "")).strip()
+        output = str(seed.get("output", "")).strip()
+        if not instruction or not output:
+            logger.warning(
+                "Skipping seed record %d: missing or empty 'instruction'/'output'", i
+            )
+            continue
+        valid.append(seed)
+    return valid
+
+
 def generate_instructions(
     teacher: TeacherClient,
     config: GenerationConfig,
     rng: random.Random | None = None,
+    max_consecutive_failures: int = 10,
+    sleep_fn=time.sleep,
 ) -> int:
     """Run the generation loop until ``num_instructions`` records exist.
 
     Returns the number of newly generated records.
+
+    Raises ``RuntimeError`` if the teacher fails (exception or unparseable
+    reply) ``max_consecutive_failures`` times in a row, to avoid retrying
+    forever on a persistently broken teacher.
     """
     rng = rng or random.Random()
     seeds = load_jsonl(config.seed_path)
     if not seeds:
         raise FileNotFoundError(f"No seed tasks found at {config.seed_path}")
+    seeds = validate_seeds(seeds)
+    if not seeds:
+        raise FileNotFoundError(
+            f"No valid seed tasks (with non-empty 'instruction' and 'output') found at "
+            f"{config.seed_path}"
+        )
 
     generated = load_jsonl(config.output_path)
     system_prompt = SYSTEM_PROMPT_JA if config.language == "ja" else SYSTEM_PROMPT_EN
     new_count = 0
+
+    consecutive_failures = 0
+    backoff = 1.0
+    last_failure_kind = None
 
     while len(generated) < config.num_instructions:
         pool = seeds + generated
@@ -140,14 +172,32 @@ def generate_instructions(
             reply = teacher.complete(prompt, system=system_prompt)
         except Exception:
             logger.exception("Teacher call failed; retrying with a new sample")
-            continue
-        tasks = parse_generated_tasks(reply)
-        if not tasks:
-            logger.warning("Could not parse any tasks from teacher reply; skipping batch")
-            continue
-        append_jsonl(config.output_path, tasks)
-        generated.extend(tasks)
-        new_count += len(tasks)
-        logger.info("Generated %d/%d instructions", len(generated), config.num_instructions)
+            consecutive_failures += 1
+            last_failure_kind = "teacher call exception"
+        else:
+            tasks = parse_generated_tasks(reply)
+            if not tasks:
+                logger.warning("Could not parse any tasks from teacher reply; skipping batch")
+                consecutive_failures += 1
+                last_failure_kind = "unparseable teacher reply"
+            else:
+                consecutive_failures = 0
+                backoff = 1.0
+                tasks = tasks[: config.num_instructions - len(generated)]
+                append_jsonl(config.output_path, tasks)
+                generated.extend(tasks)
+                new_count += len(tasks)
+                logger.info(
+                    "Generated %d/%d instructions", len(generated), config.num_instructions
+                )
+                continue
+
+        if consecutive_failures >= max_consecutive_failures:
+            raise RuntimeError(
+                f"Teacher failed {consecutive_failures} times in a row "
+                f"(last failure: {last_failure_kind}); giving up."
+            )
+        sleep_fn(backoff)
+        backoff = min(backoff * 2, 30.0)
 
     return new_count
