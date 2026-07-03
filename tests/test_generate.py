@@ -47,6 +47,42 @@ class TestParseGeneratedTasks:
         assert parse_generated_tasks("[{broken json") == []
         assert parse_generated_tasks("配列がありません") == []
 
+    def test_json_array_followed_by_bracketed_prose(self):
+        array = json.dumps(
+            [{"instruction": "翻訳して", "input": "hello", "output": "こんにちは"}],
+            ensure_ascii=False,
+        )
+        text = f"{array}\nNote: [draft] これは下書きです。"
+        tasks = parse_generated_tasks(text)
+        assert len(tasks) == 1
+        assert tasks[0]["output"] == "こんにちは"
+
+    def test_json_array_preceded_by_prose_without_brackets(self):
+        text = (
+            "以下が生成結果です。\n"
+            + json.dumps(
+                [{"instruction": "要約して", "input": "", "output": "要約結果"}],
+                ensure_ascii=False,
+            )
+        )
+        tasks = parse_generated_tasks(text)
+        assert len(tasks) == 1
+        assert tasks[0]["instruction"] == "要約して"
+
+    def test_json_array_preceded_by_prose_with_brackets(self):
+        # The leading "[TODO]" is not valid JSON on its own (bareword), so it
+        # must be skipped in favor of the real array that follows.
+        text = (
+            "参考情報 [TODO] を踏まえた生成結果です:\n"
+            + json.dumps(
+                [{"instruction": "要約して", "input": "", "output": "要約結果"}],
+                ensure_ascii=False,
+            )
+        )
+        tasks = parse_generated_tasks(text)
+        assert len(tasks) == 1
+        assert tasks[0]["instruction"] == "要約して"
+
 
 class FakeTeacher(TeacherClient):
     """Returns a fixed batch of tasks per call."""

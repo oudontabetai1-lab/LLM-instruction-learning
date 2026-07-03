@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import random
-import re
 import time
 from pathlib import Path
 
@@ -80,20 +79,36 @@ def format_examples(tasks: list[dict]) -> str:
     return "\n".join(blocks)
 
 
+def _extract_json_array(text: str) -> list | None:
+    """Find the first valid JSON array in ``text``.
+
+    The model may wrap the JSON array in prose or a code fence, and any
+    trailing prose may itself contain brackets (e.g. "Note: [draft]"), so a
+    greedy regex from the first ``[`` to the last ``]`` is unreliable. Instead,
+    try decoding from each ``[`` in turn and take the first successful parse
+    that yields a list.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "[":
+            continue
+        try:
+            data, _ = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list):
+            return data
+    return None
+
+
 def parse_generated_tasks(text: str) -> list[dict]:
     """Extract instruction/input/output records from the teacher's reply.
 
     The model may wrap the JSON array in prose or a code fence, so find the
     outermost array and validate each element.
     """
-    match = re.search(r"\[.*\]", text, re.DOTALL)
-    if not match:
-        return []
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, list):
+    data = _extract_json_array(text)
+    if data is None:
         return []
     tasks = []
     for item in data:

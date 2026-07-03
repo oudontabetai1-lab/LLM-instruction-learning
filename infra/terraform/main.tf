@@ -40,7 +40,9 @@ resource "aws_ecr_repository" "pipeline" {
 }
 
 # --- GPU インスタンス(Ollama サーバー + 学習ジョブ) ---
+# gpu_instance_count = 0(ストレージのみ構成)の場合は AMI 検索自体を行わない
 data "aws_ami" "dlami" {
+  count       = var.gpu_instance_count > 0 ? 1 : 0
   most_recent = true
   owners      = ["amazon"]
   filter {
@@ -128,7 +130,7 @@ resource "aws_iam_instance_profile" "gpu" {
 
 resource "aws_instance" "gpu" {
   count                  = var.gpu_instance_count
-  ami                    = data.aws_ami.dlami.id
+  ami                    = data.aws_ami.dlami[0].id
   instance_type          = var.gpu_instance_type
   iam_instance_profile   = aws_iam_instance_profile.gpu.name
   vpc_security_group_ids = [aws_security_group.gpu.id]
