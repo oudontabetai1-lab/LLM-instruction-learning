@@ -63,6 +63,25 @@ class TestDeduplicate:
         ]
         assert len(deduplicate(records, threshold=0.7)) == 2
 
+    def test_same_instruction_different_input_both_kept(self):
+        """A generic instruction with different inputs represents distinct
+        training examples and must not be collapsed by dedup (regression test
+        for the input-blind dedup bug)."""
+        records = [
+            make_record(instruction="次の英文を日本語に翻訳してください", input_="Good morning, everyone."),
+            make_record(instruction="次の英文を日本語に翻訳してください", input_="The stock market fell sharply today."),
+        ]
+        kept = deduplicate(records, threshold=0.7)
+        assert len(kept) == 2
+
+    def test_same_instruction_and_input_still_deduped(self):
+        records = [
+            make_record(instruction="次の英文を日本語に翻訳してください", input_="Good morning, everyone."),
+            make_record(instruction="次の英文を日本語に翻訳してください", input_="Good morning, everyone."),
+        ]
+        kept = deduplicate(records, threshold=0.7)
+        assert len(kept) == 1
+
 
 def test_curate_end_to_end(tmp_path):
     input_path = tmp_path / "generated.jsonl"

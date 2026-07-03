@@ -55,12 +55,22 @@ def passes_quality_filter(record: dict, config: CurationConfig) -> bool:
     return not any(output.startswith(marker) for marker in refusal_markers)
 
 
+def _dedup_key(record: dict) -> str:
+    """Text used for near-duplicate comparison: instruction *and* input.
+
+    A generic instruction (e.g. "次の英文を日本語に翻訳してください") paired with
+    different inputs represents distinct training examples and must not be
+    collapsed into a single record just because the instruction repeats.
+    """
+    return record["instruction"] + "\n" + record.get("input", "")
+
+
 def deduplicate(records: list[dict], threshold: float) -> list[dict]:
-    """Drop records whose instruction is near-duplicate of an earlier one."""
+    """Drop records whose instruction+input is near-duplicate of an earlier one."""
     kept: list[dict] = []
     for record in records:
-        instruction = record["instruction"]
-        if any(rouge_l_f1(instruction, k["instruction"]) >= threshold for k in kept):
+        key = _dedup_key(record)
+        if any(rouge_l_f1(key, _dedup_key(k)) >= threshold for k in kept):
             continue
         kept.append(record)
     return kept

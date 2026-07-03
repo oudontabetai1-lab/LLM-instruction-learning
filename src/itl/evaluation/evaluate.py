@@ -108,6 +108,12 @@ def evaluate(
         results.append({**record, "student_answer": answer, **judgement})
         logger.info("Evaluated %d/%d (score=%.0f)", i, len(records), judgement["score"])
 
+    if not results:
+        raise RuntimeError(
+            f"全 {len(records)} サンプルの評価に失敗した"
+            "(生徒推論失敗または judge 応答パース不能)。詳細はログを参照。"
+        )
+
     scores = [r["score"] for r in results]
     report = {
         "model": student.ollama_name,
