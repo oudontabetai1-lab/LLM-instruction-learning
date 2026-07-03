@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# pipeline outputs
+data/generated/
+data/curated/
+outputs/
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+.DS_Store
+.pytest_cache/
+.ruff_cache/
